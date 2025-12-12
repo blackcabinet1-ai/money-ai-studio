@@ -41,7 +41,7 @@ export async function POST(
 
     return NextResponse.json({
       message: '음성 생성은 프론트엔드에서 Web Speech API를 사용합니다.',
-      scenes: scenes.map((s) => ({
+      scenes: scenes.map((s: { id: string; text: string; order: number }) => ({
         id: s.id,
         text: s.text,
         order: s.order,
