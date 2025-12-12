@@ -1,0 +1,111 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 사용자 모델
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  role          String    @default("pending") // pending, approved, admin
+  inviteCode    String?   @unique
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  projects      Project[]
+  accounts      Account[]
+  sessions      Session[]
+}
+
+// NextAuth 계정 모델
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+// NextAuth 세션 모델
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// 승인 요청 모델
+model ApprovalRequest {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  status    String   @default("pending") // pending, approved, rejected
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Gemini API 키 모델
+model GeminiKey {
+  id          String   @id @default(cuid())
+  apiKey      String
+  name        String   // 키 별칭 (예: "키1", "키2")
+  usageCount  Int      @default(0)
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 프로젝트 모델
+model Project {
+  id          String   @id @default(cuid())
+  title       String
+  genre       String
+  script      String?  // 대본
+  videoTitle  String?  // 영상 제목
+  description String?  // 영상 설명
+  tags        String?  // 태그 (쉼표로 구분)
+  voiceUrl    String?  // 생성된 음성 파일 경로
+  thumbnailUrl String? // 썸네일 이미지 경로
+  videoUrl    String?  // 최종 영상 경로
+  status      String   @default("draft") // draft, processing, completed
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  scenes      Scene[]
+}
+
+// 장면 모델 (영상의 각 장면)
+model Scene {
+  id        String   @id @default(cuid())
+  order     Int      // 순서
+  text      String   // 자막/나레이션 텍스트
+  imageUrl  String?  // 장면 이미지
+  voiceUrl  String?  // 장면 음성
+  duration  Int?     // 지속 시간 (초)
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
