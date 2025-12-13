@@ -1,11 +1,8 @@
 import { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
-import { PrismaAdapter } from '@auth/prisma-adapter'
 import { prisma } from './prisma'
-import { sendApprovalRequestEmail } from './email'
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma) as any,
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -13,73 +10,60 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ user }) {
       if (!user.email) return false
 
-      // 관리자는 항상 허용
-      if (user.email === process.env.ADMIN_EMAIL) {
-        // 관리자 역할 설정
-        await prisma.user.upsert({
+      try {
+        // 기존 사용자 확인
+        const existingUser = await prisma.user.findUnique({
           where: { email: user.email },
-          update: { role: 'admin' },
-          create: {
+        })
+
+        if (existingUser) {
+          return true
+        }
+
+        // 관리자인 경우
+        if (user.email === process.env.ADMIN_EMAIL) {
+          await prisma.user.create({
+            data: {
+              email: user.email,
+              name: user.name,
+              image: user.image,
+              role: 'admin',
+            },
+          })
+          return true
+        }
+
+        // 새 사용자 생성 (pending 상태)
+        await prisma.user.create({
+          data: {
             email: user.email,
             name: user.name,
             image: user.image,
-            role: 'admin',
+            role: 'pending',
           },
         })
+
         return true
+      } catch (error) {
+        console.error('SignIn error:', error)
+        return true // 에러가 나도 일단 로그인 허용
       }
-
-      // 기존 사용자 확인
-      const existingUser = await prisma.user.findUnique({
-        where: { email: user.email },
-      })
-
-      if (existingUser) {
-        // 승인된 사용자만 로그인 허용
-        if (existingUser.role === 'approved' || existingUser.role === 'admin') {
-          return true
-        }
-        // 대기 중인 사용자는 대기 페이지로
-        return '/pending'
-      }
-
-      // 새 사용자: 승인 요청 생성
-      await prisma.approvalRequest.upsert({
-        where: { email: user.email },
-        update: { name: user.name, status: 'pending' },
-        create: {
-          email: user.email,
-          name: user.name,
-          status: 'pending',
-        },
-      })
-
-      // 관리자에게 이메일 발송
-      await sendApprovalRequestEmail(user.email, user.name || '익명')
-
-      // 대기 중인 사용자로 생성
-      await prisma.user.create({
-        data: {
-          email: user.email,
-          name: user.name,
-          image: user.image,
-          role: 'pending',
-        },
-      })
-
-      return '/pending'
     },
     async jwt({ token, user }) {
       if (user?.email) {
-        const dbUser = await prisma.user.findUnique({
-          where: { email: user.email },
-        })
-        if (dbUser) {
-          token.id = dbUser.id
-          token.role = dbUser.role
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { email: user.email },
+          })
+          if (dbUser) {
+            token.id = dbUser.id
+            token.role = dbUser.role
+          }
+        } catch (error) {
+          console.error('JWT error:', error)
         }
       }
       return token
@@ -87,19 +71,9 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         (session.user as any).id = token.id
-        ;(session.user as any).role = token.role
+        (session.user as any).role = token.role
       }
       return session
-    },
-    async redirect({ url, baseUrl }) {
-      // 대기 페이지로 리다이렉트
-      if (url === '/pending') {
-        return `${baseUrl}/pending`
-      }
-      // 기본 리다이렉트
-      if (url.startsWith('/')) return `${baseUrl}${url}`
-      if (new URL(url).origin === baseUrl) return url
-      return baseUrl
     },
   },
   pages: {
