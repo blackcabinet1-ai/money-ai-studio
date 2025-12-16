@@ -1,4 +1,3 @@
-// 임시 메모리 데이터베이스 (Vercel용)
 const users: any[] = []
 
 export const prisma = {
